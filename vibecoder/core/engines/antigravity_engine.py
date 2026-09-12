@@ -23,13 +23,21 @@ class AntigravityEngine(BaseEngine):
 
     @property
     def description(self) -> str:
-        return f"Antigravity CLI ({settings.get('agy_model', 'gemini-3.8-flash-high')})"
+        return f"Antigravity CLI ({settings.get('agy_model', 'gemini-3.8-flash-medium')})"
 
     async def run(self, prompt: str, project_dir: str, **kwargs) -> EngineResult:
         start_time = time.time()
         proj_path = str(Path(project_dir).resolve())
-        model = kwargs.get("model") or settings.get("agy_model", "gemini-3.8-flash-high")
-        effort = kwargs.get("effort") or settings.get("agy_effort", "medium")
+        effort = (kwargs.get("effort") or settings.get("agy_effort", "medium")).lower()
+        base_model = kwargs.get("model") or settings.get("agy_model", "gemini-3.8-flash-medium")
+
+        # Harmonize model name with desired effort to avoid CLI conflict
+        if any(base_model.endswith(suf) for suf in ("-high", "-medium", "-low")):
+            prefix = base_model.rsplit("-", 1)[0]
+            model = f"{prefix}-{effort}"
+        else:
+            model = base_model
+
         timeout = kwargs.get("timeout") or settings.get("timeout_seconds", 360)
         on_progress = kwargs.get("on_progress")
 
@@ -54,7 +62,6 @@ class AntigravityEngine(BaseEngine):
             "--add-dir", proj_path,
             "--mode", "accept-edits",
             "--model", model,
-            "--effort", effort,
             "--dangerously-skip-permissions"
         ]
 

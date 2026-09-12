@@ -73,7 +73,7 @@ GH_BIN = shutil.which("gh") or "/usr/bin/gh"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "default_engine": "ensemble",
-    "agy_model": "gemini-3.8-flash-high",
+    "agy_model": "gemini-3.8-flash-medium",
     "agy_effort": "medium",
     "aider_model": "openrouter/deepseek/deepseek-chat",
     "copilot_model": "auto",
