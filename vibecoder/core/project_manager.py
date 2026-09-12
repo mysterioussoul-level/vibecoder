@@ -403,4 +403,9 @@ class ProjectManager:
         except Exception as e:
             return False, f"Error reading file: {str(e)}"
 
+    def list_templates(self) -> Dict[str, Any]:
+        """Return available project starter templates."""
+        return TEMPLATES
+
 project_manager = ProjectManager()
+

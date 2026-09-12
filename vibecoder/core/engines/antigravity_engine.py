@@ -29,8 +29,8 @@ class AntigravityEngine(BaseEngine):
         start_time = time.time()
         proj_path = str(Path(project_dir).resolve())
         model = kwargs.get("model") or settings.get("agy_model", "gemini-3.8-flash-high")
-        effort = kwargs.get("effort") or settings.get("agy_effort", "high")
-        timeout = kwargs.get("timeout") or settings.get("timeout_seconds", 300)
+        effort = kwargs.get("effort") or settings.get("agy_effort", "medium")
+        timeout = kwargs.get("timeout") or settings.get("timeout_seconds", 360)
         on_progress = kwargs.get("on_progress")
 
         if on_progress:
@@ -84,6 +84,9 @@ class AntigravityEngine(BaseEngine):
             if settings.get("auto_test", True):
                 test_rep = test_runner.run_project_tests(project_dir)
 
+            if not success and modified and test_rep and test_rep.passed:
+                success = True
+
             return EngineResult(
                 success=success,
                 engine=f"Antigravity ({model})",
@@ -101,12 +104,25 @@ class AntigravityEngine(BaseEngine):
                 proc.kill()
             except Exception:
                 pass
+            st_after = git_ops.get_status(project_dir)
+            modified = [f for f in st_after.get("all_changes", []) if f not in st_before.get("all_changes", []) or f in st_after.get("modified", [])]
+            if not modified:
+                modified = st_after.get("all_changes", [])
+            diff_stat = git_ops.get_diff_stat(project_dir)
+            test_rep = None
+            if settings.get("auto_test", True):
+                test_rep = test_runner.run_project_tests(project_dir)
+            has_working_code = bool(modified and test_rep and test_rep.passed)
             return EngineResult(
-                success=False,
-                engine="Antigravity",
+                success=has_working_code,
+                engine=f"Antigravity ({model})",
                 prompt=prompt,
+                output="Antigravity applied code edits before reaching timeout." if has_working_code else "",
+                modified_files=modified,
+                diff_stat=diff_stat,
+                test_report=test_rep,
                 duration=time.time() - start_time,
-                error=f"Antigravity timed out after {timeout} seconds."
+                error="" if has_working_code else f"Antigravity timed out after {timeout} seconds."
             )
         except Exception as e:
             return EngineResult(

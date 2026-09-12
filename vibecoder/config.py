@@ -72,15 +72,15 @@ GIT_BIN = shutil.which("git") or "/usr/bin/git"
 GH_BIN = shutil.which("gh") or "/usr/bin/gh"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
-    "default_engine": "antigravity",
+    "default_engine": "ensemble",
     "agy_model": "gemini-3.8-flash-high",
-    "agy_effort": "high",
+    "agy_effort": "medium",
     "aider_model": "openrouter/deepseek/deepseek-chat",
     "copilot_model": "auto",
     "auto_test": True,
     "auto_git": True,
     "max_iterations": 2,
-    "timeout_seconds": 300,
+    "timeout_seconds": 360,
 }
 
 class SettingsManager:
