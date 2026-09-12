@@ -1,12 +1,13 @@
 """
-Antigravity Engine implementation (Gemini 3.8 Flash High).
-Harnesses Google DeepMind Antigravity CLI for autonomous reasoning.
+Antigravity Engine implementation (Gemini 3.8 Flash).
+Harnesses Google DeepMind Antigravity CLI for autonomous reasoning with real-time tool command streaming.
 """
 
 import asyncio
+import json
 import os
 import time
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 from vibecoder.config import AGY_BIN, settings
@@ -14,8 +15,29 @@ from vibecoder.core.engines.base import BaseEngine, EngineResult
 from vibecoder.core import git_ops, test_runner
 from vibecoder.core.shell_runner import strip_ansi
 
+def format_tool_command(tool_name: str, params: Dict[str, Any]) -> str:
+    """Format an agent tool call into a concise, human-readable terminal command."""
+    if tool_name == "run_command":
+        cmd = params.get("CommandLine") or params.get("command") or ""
+        return f"$ {cmd}"[:55]
+    elif tool_name in ("view_file", "read_file"):
+        path = params.get("AbsolutePath") or params.get("TargetFile") or params.get("path") or ""
+        return f"view_file ({Path(path).name})"
+    elif tool_name in ("replace_file_content", "write_to_file", "multi_replace_file_content"):
+        path = params.get("TargetFile") or params.get("path") or ""
+        return f"edit_file ({Path(path).name})"
+    elif tool_name in ("find_by_name", "grep_search"):
+        pat = params.get("Pattern") or params.get("Query") or ""
+        return f"{tool_name} ({pat})"[:55]
+    elif tool_name == "list_dir":
+        path = params.get("DirectoryPath") or params.get("path") or ""
+        name = Path(path).name
+        return f"list_dir ({name or '/'})"
+    else:
+        return f"tool: {tool_name}"
+
 class AntigravityEngine(BaseEngine):
-    """Antigravity CLI runner powered by Gemini 3.8 (High)."""
+    """Antigravity CLI runner powered by Gemini 3.8 Flash."""
 
     @property
     def name(self) -> str:
@@ -62,8 +84,13 @@ class AntigravityEngine(BaseEngine):
             "--add-dir", proj_path,
             "--mode", "accept-edits",
             "--model", model,
+            "--output-format", "stream-json",
             "--dangerously-skip-permissions"
         ]
+
+        executed_commands: List[str] = []
+        final_summary: str = ""
+        raw_outputs: List[str] = []
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -74,11 +101,45 @@ class AntigravityEngine(BaseEngine):
                 env=os.environ.copy()
             )
 
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            duration = time.time() - start_time
+            async def stream_reader():
+                nonlocal final_summary
+                async for line in proc.stdout:
+                    line_str = line.decode("utf-8", errors="replace").strip()
+                    if not line_str:
+                        continue
+                    try:
+                        ev = json.loads(line_str)
+                        event_type = ev.get("event")
+                        if event_type == "step_update":
+                            su = ev.get("step_update", {})
+                            step_type = su.get("step_type")
+                            state = su.get("state")
+                            if step_type == "tool" and state == "ACTIVE":
+                                tool_name = su.get("tool_name", "tool")
+                                params = su.get("tool_info", {}).get("parameters", {})
+                                cmd_str = format_tool_command(tool_name, params)
+                                executed_commands.append(cmd_str)
+                                if on_progress:
+                                    await on_progress(f"Running {tool_name}", cmd_str)
+                            elif step_type == "agent_response" and state == "ACTIVE":
+                                text_delta = su.get("text_delta", "")
+                                if text_delta and "\n" in text_delta and on_progress:
+                                    line_clean = text_delta.strip().split("\n")[0][:75]
+                                    if len(line_clean) > 8:
+                                        await on_progress("Formulating Code", line_clean)
+                        elif event_type == "result":
+                            res_obj = ev.get("result", {})
+                            final_summary = res_obj.get("response", "").strip()
+                    except Exception:
+                        raw_outputs.append(line_str)
 
-            out_text = strip_ansi((stdout.decode("utf-8", errors="replace") + "\n" + stderr.decode("utf-8", errors="replace"))).strip()
+            reader_task = asyncio.create_task(stream_reader())
+            _, stderr = await asyncio.wait_for(asyncio.gather(reader_task, proc.wait()), timeout=timeout)
+            duration = time.time() - start_time
             success = (proc.returncode == 0)
+
+            out_text = final_summary or "\n".join(raw_outputs).strip()
+            out_text = strip_ansi(out_text)
 
             st_after = git_ops.get_status(project_dir)
             modified = [f for f in st_after.get("all_changes", []) if f not in st_before.get("all_changes", []) or f in st_after.get("modified", [])]
@@ -103,7 +164,8 @@ class AntigravityEngine(BaseEngine):
                 diff_stat=diff_stat,
                 test_report=test_rep,
                 duration=duration,
-                error="" if success else out_text
+                error="" if success else (out_text or "Process exited with non-zero status"),
+                executed_commands=executed_commands
             )
 
         except asyncio.TimeoutError:
@@ -129,7 +191,8 @@ class AntigravityEngine(BaseEngine):
                 diff_stat=diff_stat,
                 test_report=test_rep,
                 duration=time.time() - start_time,
-                error="" if has_working_code else f"Antigravity timed out after {timeout} seconds."
+                error="" if has_working_code else f"Antigravity timed out after {timeout} seconds.",
+                executed_commands=executed_commands
             )
         except Exception as e:
             return EngineResult(
@@ -137,5 +200,6 @@ class AntigravityEngine(BaseEngine):
                 engine="Antigravity",
                 prompt=prompt,
                 duration=time.time() - start_time,
-                error=f"Antigravity execution error: {str(e)}"
+                error=f"Antigravity execution error: {str(e)}",
+                executed_commands=executed_commands
             )

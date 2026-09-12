@@ -50,6 +50,7 @@ class EnsembleEngine(BaseEngine):
         iteration = 0
         last_result: Optional[EngineResult] = None
         used_engines = []
+        all_executed_commands = []
 
         while iteration < max_iters:
             iteration += 1
@@ -60,6 +61,10 @@ class EnsembleEngine(BaseEngine):
 
             res = await self.antigravity.run(current_prompt, project_dir, timeout=timeout, **kwargs)
             used_engines.append("Gemini 3.8")
+            if res.executed_commands:
+                for c in res.executed_commands:
+                    if c not in all_executed_commands:
+                        all_executed_commands.append(c)
 
             # If Antigravity failed or made no changes, fallback to GitHub Copilot
             if not res.success or not res.modified_files:
@@ -67,6 +72,11 @@ class EnsembleEngine(BaseEngine):
                     await on_progress("Copilot Fallback", "Antigravity did not modify files; delegating to Copilot CLI...")
                 copilot_res = await self.copilot.run(current_prompt, project_dir, timeout=timeout, **kwargs)
                 used_engines.append("Copilot")
+                if copilot_res.executed_commands:
+                    for c in copilot_res.executed_commands:
+                        if c not in all_executed_commands:
+                            all_executed_commands.append(c)
+
                 if copilot_res.success and copilot_res.modified_files:
                     res = copilot_res
                 elif not copilot_res.modified_files and settings.get("OPENROUTER_API_KEY"):
@@ -74,6 +84,10 @@ class EnsembleEngine(BaseEngine):
                         await on_progress("Aider Fallback", "Delegating to Aider for AST-based code edits...")
                     aider_res = await self.aider.run(current_prompt, project_dir, timeout=timeout, **kwargs)
                     used_engines.append("Aider")
+                    if aider_res.executed_commands:
+                        for c in aider_res.executed_commands:
+                            if c not in all_executed_commands:
+                                all_executed_commands.append(c)
                     if aider_res.success and aider_res.modified_files:
                         res = aider_res
 
@@ -85,6 +99,14 @@ class EnsembleEngine(BaseEngine):
 
             test_rep = test_runner.run_project_tests(project_dir)
             res.test_report = test_rep
+
+            if test_rep:
+                t_cmd = f"$ {test_rep.runner}"
+                t_res = f"✔ {test_rep.summary[:40]}" if test_rep.passed else f"✘ {test_rep.summary[:40]}"
+                all_executed_commands.append(t_cmd)
+                all_executed_commands.append(t_res)
+                if on_progress:
+                    await on_progress("Test Suite", f"{t_cmd} -> {t_res}")
 
             if test_rep.passed:
                 res.success = True
@@ -111,6 +133,7 @@ class EnsembleEngine(BaseEngine):
             engine_summary = " + ".join(dict.fromkeys(used_engines)) or "Auto Vibe"
             last_result.engine = f"{engine_summary} ({iteration} iter{'s' if iteration > 1 else ''})"
             last_result.duration = duration
+            last_result.executed_commands = all_executed_commands
             return last_result
 
         return EngineResult(

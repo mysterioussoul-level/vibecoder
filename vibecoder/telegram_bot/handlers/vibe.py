@@ -6,6 +6,7 @@ Transforms natural language vibes into autonomous code generation, diffing, and 
 import asyncio
 import time
 import logging
+from collections import deque
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
@@ -87,32 +88,44 @@ async def vibe_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     proj = project_manager.get_active_project()
     engine = engine_manager.get_engine()
 
-    start_time = time.time()
-    current_stage = "Inspecting workspace files & imports..."
-    stage_percent = 15
-    spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    bar_len = 10
+    # Determine active model display name
+    eng_key = engine.name.lower()
+    if eng_key == "antigravity":
+        m = settings.get("agy_model", "gemini-3.8-flash-medium")
+        model_display = "Gemini 3.8 Flash" if "gemini-3.8-flash" in m else m
+    elif eng_key == "ensemble":
+        model_display = "Gemini 3.8 Flash (Auto Vibe)"
+    elif eng_key == "copilot":
+        model_display = "GitHub Copilot"
+    elif eng_key == "aider":
+        model_display = "Aider (OpenRouter)"
+    else:
+        model_display = engine.name.capitalize()
 
-    def make_progress_bar(pct: int) -> str:
-        filled = max(0, min(bar_len, int(round((pct / 100) * bar_len))))
-        empty = bar_len - filled
-        return f"[{'■' * filled}{'□' * empty}] {pct}%"
+    start_time = time.time()
+    current_stage = "Inspecting workspace files & dependencies..."
+    spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    recent_commands = deque(maxlen=5)
+    recent_commands.append(f"$ cd {proj['name']}")
+    recent_commands.append("• Initializing workspace analysis...")
 
     def format_status_card(spinner: str, elapsed: int) -> str:
         mins, secs = divmod(elapsed, 60)
         time_str = f"{mins:02d}:{secs:02d}"
-        bar = make_progress_bar(stage_percent)
+        cmds_str = "\n".join(recent_commands) if recent_commands else "• Waiting for activity..."
         return (
-            "🧠 <b>Vibe Coding in progress...</b>\n"
+            "⚡ <b>𝗩𝗜𝗕𝗘 𝗖𝗢𝗗𝗘𝗥 • 𝗟𝗜𝗩𝗘 𝗧𝗘𝗥𝗠𝗜𝗡𝗔𝗟</b>\n"
             "─────────────────────────────\n"
             f"📂 <b>Project:</b> <code>{escape(proj['name'])}</code>\n"
-            f"🤖 <b>Engine:</b> <b>{escape(engine.name.capitalize())}</b>\n"
-            f"⏱ <b>Elapsed:</b> <code>{time_str}</code> {spinner}\n\n"
-            f"🎯 <b>Current Task:</b>\n"
-            f"<i>{escape(current_stage)}</i>\n\n"
-            f"<code>{bar}</code>\n"
+            f"🤖 <b>Model:</b> <code>{escape(model_display)}</code>\n"
+            f"⏱ <b>Elapsed:</b> <code>{time_str}</code> {spinner}\n"
             "─────────────────────────────\n"
-            f"💬 <i>'{escape(text[:120])}'</i>"
+            "🎯 <b>Current Task:</b>\n"
+            f"<b>{escape(current_stage)}</b>\n\n"
+            "💻 <b>Live Activity (Recent commands):</b>\n"
+            f"<pre>{escape(cmds_str)}</pre>\n"
+            "─────────────────────────────\n"
+            f"💬 <i>'{escape(text[:100])}'</i>"
         )
 
     status_msg = await update.message.reply_text(
@@ -135,26 +148,20 @@ async def vibe_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             except Exception:
                 pass
             try:
-                await asyncio.wait_for(stop_animation.wait(), timeout=3.5)
+                await asyncio.wait_for(stop_animation.wait(), timeout=2.5)
             except asyncio.TimeoutError:
                 pass
 
     anim_task = asyncio.create_task(animate_progress())
 
     async def on_progress(stage: str, details: str):
-        nonlocal current_stage, stage_percent
+        nonlocal current_stage
         current_stage = f"{stage}: {details}"
-        stage_lower = stage.lower()
-        if "gemini" in stage_lower or "plan" in stage_lower:
-            stage_percent = 35
-        elif "copilot" in stage_lower or "aider" in stage_lower or "code" in stage_lower:
-            stage_percent = 65
-        elif "test" in stage_lower:
-            stage_percent = 85
-        elif "heal" in stage_lower:
-            stage_percent = 70
+        if any(details.startswith(p) for p in ("$", "view_file", "edit_file", "find_by_name", "list_dir", "grep_search", "tool:", "✔", "✘")):
+            recent_commands.append(details)
         else:
-            stage_percent = min(stage_percent + 15, 95)
+            short = details if len(details) <= 45 else details[:42] + "..."
+            recent_commands.append(f"⚡ {stage}: {short}")
 
     try:
         result = await engine_manager.run_vibe(

@@ -49,39 +49,44 @@ def format_vibe_result(res: EngineResult) -> str:
     parts = [
         f"{status_icon} <b>{title}</b>\n"
         "─────────────────────────────\n"
-        f"🤖 <b>Engine:</b> {eng_esc}\n"
-        f"⏱ <b>Execution Time:</b> {dur}s\n"
+        f"🤖 <b>Model:</b> <code>{eng_esc}</code>\n"
+        f"⏱ <b>Duration:</b> <code>{dur}s</code>\n"
     ]
+
+    if res.output:
+        summary_out = res.output.strip()
+        if len(summary_out) > 600:
+            summary_out = summary_out[:600] + "..."
+        parts.append(f"📋 <b>What Was Accomplished:</b>\n<i>{escape(summary_out)}</i>\n")
 
     if res.modified_files:
         files_str = "\n".join(f"• <code>{escape(f)}</code>" for f in res.modified_files[:8])
         if len(res.modified_files) > 8:
             files_str += f"\n<i>...and {len(res.modified_files) - 8} more</i>"
-        parts.append(f"📝 <b>Modified Files:</b>\n{files_str}\n")
+        parts.append(f"📝 <b>Modified Files ({len(res.modified_files)}):</b>\n{files_str}\n")
     else:
         parts.append("📝 <b>Modified Files:</b> No file changes detected.\n")
 
     if res.diff_stat:
-        parts.append(f"📊 <b>Diff Stat:</b>\n<pre>{escape(res.diff_stat[:400])}</pre>\n")
+        parts.append(f"📊 <b>Git Changes:</b>\n<pre>{escape(res.diff_stat[:350])}</pre>\n")
 
     if res.test_report:
-        t_icon = "✅" if res.test_report.passed else "❌"
+        t_icon = "✅ Passed" if res.test_report.passed else "❌ Failed"
         parts.append(
             f"🧪 <b>Automated Tests ({escape(res.test_report.runner)}):</b> {t_icon}\n"
             f"<i>{escape(res.test_report.summary)}</i>\n"
         )
 
+    if res.executed_commands:
+        cmds_str = "\n".join(res.executed_commands[-5:])
+        parts.append(f"💻 <b>Executed Commands:</b>\n<pre>{escape(cmds_str)}</pre>\n")
+
     if res.error:
         parts.append(f"⚠️ <b>Failure Diagnosis:</b>\n<pre>{escape(res.error[:800])}</pre>\n")
-        parts.append("💡 <i>Tip: Tap /engines to switch to GitHub Copilot or Aider, or inspect with /test.</i>\n")
+        parts.append("💡 <i>Tip: Tap /engines to switch engines or inspect with /test.</i>\n")
     elif not res.success and not res.modified_files:
-        parts.append("⚠️ <b>Notice:</b> The AI engine completed its reasoning pass but did not make code edits.\n")
-        parts.append("💡 <i>Tip: Tap /engines to switch to GitHub Copilot or Aider, or be more explicit in your request.</i>\n")
-    elif res.output:
-        summary_out = res.output.strip()
-        if len(summary_out) > 500:
-            summary_out = summary_out[:500] + "..."
-        parts.append(f"💬 <b>AI Summary:</b>\n<i>{escape(summary_out)}</i>\n")
+        parts.append("⚠️ <b>Notice:</b> The AI engine completed reasoning but did not make code edits.\n")
+        parts.append("💡 <i>Tip: Tap /engines to switch engines or be more explicit in your request.</i>\n")
 
     parts.append("─────────────────────────────\n👇 <i>What would you like to do next?</i>")
     return "\n".join(parts)

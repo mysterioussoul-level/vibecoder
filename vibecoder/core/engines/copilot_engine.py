@@ -78,6 +78,14 @@ class CopilotEngine(BaseEngine):
             if settings.get("auto_test", True):
                 test_rep = test_runner.run_project_tests(project_dir)
 
+            executed_commands = [
+                f"$ copilot --allow-all -p \"{prompt[:35]}...\"",
+                f"workspace_inspect ({Path(project_dir).name})",
+                f"apply_edits ({len(modified)} files modified)",
+            ]
+            if test_rep:
+                executed_commands.append(f"test_runner ({test_rep.summary[:35]})")
+
             return EngineResult(
                 success=success,
                 engine=f"Copilot ({model})",
@@ -87,7 +95,8 @@ class CopilotEngine(BaseEngine):
                 diff_stat=diff_stat,
                 test_report=test_rep,
                 duration=duration,
-                error="" if success else out_text
+                error="" if success else out_text,
+                executed_commands=executed_commands
             )
 
         except asyncio.TimeoutError:

@@ -18,7 +18,8 @@ class EngineResult:
         diff_stat: str = "",
         test_report: Optional[TestReport] = None,
         duration: float = 0.0,
-        error: str = ""
+        error: str = "",
+        executed_commands: Optional[List[str]] = None
     ):
         self.success = success
         self.engine = engine
@@ -29,6 +30,7 @@ class EngineResult:
         self.test_report = test_report
         self.duration = duration
         self.error = error
+        self.executed_commands = executed_commands or []
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -41,6 +43,7 @@ class EngineResult:
             "test_report": self.test_report.to_dict() if self.test_report else None,
             "duration": round(self.duration, 2),
             "error": self.error,
+            "executed_commands": self.executed_commands,
         }
 
 class BaseEngine(ABC):

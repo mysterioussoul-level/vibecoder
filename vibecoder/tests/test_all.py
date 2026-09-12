@@ -118,7 +118,12 @@ def test_telegram_formatters_and_escaping():
     assert "&lt;proj&gt;" in card
     assert "&amp;" in card
 
-    # Test vibe result formatter
+    # Test vibe result formatter with executed_commands and accomplishments
+    from vibecoder.core.engines.antigravity_engine import format_tool_command
+    assert format_tool_command("run_command", {"CommandLine": "pytest -v"}) == "$ pytest -v"
+    assert format_tool_command("view_file", {"AbsolutePath": "/workspace/main.py"}) == "view_file (main.py)"
+    assert format_tool_command("replace_file_content", {"TargetFile": "/workspace/cli.py"}) == "edit_file (cli.py)"
+
     res = EngineResult(
         success=True,
         engine="Antigravity (Gemini 3.8)",
@@ -127,12 +132,16 @@ def test_telegram_formatters_and_escaping():
         modified_files=["main.py"],
         diff_stat="1 file changed, 10 insertions(+)",
         test_report=TestReport(True, "pytest", "1 passed", "OK", 0.5),
-        duration=1.2
+        duration=1.2,
+        executed_commands=["$ pytest -v", "view_file (main.py)", "edit_file (cli.py)"]
     )
     res_card = formatters.format_vibe_result(res)
     assert "𝗩𝗶𝗯𝗲 𝗖𝗼𝗱𝗶𝗻𝗴 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗲!" in res_card
     assert "main.py" in res_card
     assert "&lt;feature&gt;" in res_card
+    assert "📋 <b>What Was Accomplished:</b>" in res_card
+    assert "💻 <b>Executed Commands:</b>" in res_card
+    assert "view_file (main.py)" in res_card
 
 def test_telegram_keyboards():
     main_kb = keyboards.main_menu_keyboard()
