@@ -45,8 +45,25 @@ else
 fi
 
 # 4. Prepare directories
-echo -e "${COLOR_CYAN}[4/4] Initializing project directories...${COLOR_RESET}"
+echo -e "${COLOR_CYAN}[4/5] Initializing project directories...${COLOR_RESET}"
 mkdir -p projects storage/vibecoder
+
+# 5. Setup persistent auto-start on boot & terminal login
+echo -e "${COLOR_CYAN}[5/5] Configuring automatic boot & restart recovery...${COLOR_RESET}"
+INSTALL_DIR="$(pwd)"
+if ! grep -q "VibeCoder Autostart" ~/.bashrc 2>/dev/null; then
+    cat << EOF >> ~/.bashrc
+
+# VibeCoder Autostart on shell login / Codespace boot
+if [ -f "$INSTALL_DIR/run_vibecoder.sh" ] && ! pgrep -f "vibecoder.telegram_bot.bot" >/dev/null 2>&1; then
+    (bash "$INSTALL_DIR/run_vibecoder.sh" --daemon >/dev/null 2>&1 &)
+fi
+alias vibe-status="$INSTALL_DIR/run_vibecoder.sh --status"
+alias vibe-logs="$INSTALL_DIR/run_vibecoder.sh --logs"
+alias vibe-start="$INSTALL_DIR/run_vibecoder.sh --daemon"
+alias vibe-stop="$INSTALL_DIR/run_vibecoder.sh --stop"
+EOF
+fi
 
 echo ""
 echo -e "${COLOR_GREEN}============================================================${COLOR_RESET}"

@@ -1,0 +1,11 @@
+{
+  "name": "VibeCoder Autonomous Studio",
+  "postStartCommand": "bash run_vibecoder.sh --daemon",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/home/codespace/.python/current/bin/python3"
+      }
+    }
+  }
+}

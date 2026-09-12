@@ -60,24 +60,33 @@ start_foreground() {
 
 start_daemon() {
     check_token
-    if [ -f "$PID_FILE" ]; then
+    if pgrep -f "vibecoder.telegram_bot.bot" >/dev/null 2>&1; then
         local pid
-        pid=$(cat "$PID_FILE" 2>/dev/null || true)
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            echo -e "${COLOR_YELLOW}VibeCoder is already running (PID: $pid).${COLOR_RESET}"
-            return 0
-        fi
+        pid=$(pgrep -f "vibecoder.telegram_bot.bot" | head -n 1)
+        echo -e "${COLOR_YELLOW}VibeCoder is already running (PID: $pid).${COLOR_RESET}"
+        return 0
     fi
 
-    echo -e "${COLOR_CYAN}Starting VibeCoder as background daemon...${COLOR_RESET}"
-    nohup python3 -u -m vibecoder.telegram_bot.bot >> "$LOG_FILE" 2>&1 &
-    local new_pid=$!
-    disown "$new_pid" 2>/dev/null || true
-    echo "$new_pid" > "$PID_FILE"
-    sleep 2
+    echo -e "${COLOR_CYAN}Starting VibeCoder crash-resilient supervisor daemon...${COLOR_RESET}"
+    setsid -f bash -c '
+    cd "'"$WORKSPACE_ROOT"'"
+    export PYTHONPATH="'"$WORKSPACE_ROOT"':$PYTHONPATH"
+    while true; do
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] [Supervisor] Launching VibeCoder Bot..." >> "'"$LOG_FILE"'"
+        python3 -u -m vibecoder.telegram_bot.bot >> "'"$LOG_FILE"'" 2>&1
+        EXIT_CODE=$?
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] [Supervisor] VibeCoder process exited (code $EXIT_CODE). Restarting in 3s..." >> "'"$LOG_FILE"'"
+        sleep 3
+    done
+    ' >/dev/null 2>&1
 
-    if kill -0 "$new_pid" 2>/dev/null; then
-        echo -e "${COLOR_GREEN}✓ VibeCoder started successfully! (PID: $new_pid)${COLOR_RESET}"
+    sleep 3
+
+    if pgrep -f "vibecoder.telegram_bot.bot" >/dev/null 2>&1; then
+        local b_pid
+        b_pid=$(pgrep -f "vibecoder.telegram_bot.bot" | head -n 1)
+        echo "$b_pid" > "$PID_FILE"
+        echo -e "${COLOR_GREEN}✓ VibeCoder supervisor active! (PID: $b_pid)${COLOR_RESET}"
         echo -e "Logs: ${COLOR_YELLOW}$LOG_FILE${COLOR_RESET}"
     else
         echo -e "${COLOR_RED}✗ Failed to start. Check logs:${COLOR_RESET}"
@@ -90,31 +99,32 @@ stop_daemon() {
         local pid
         pid=$(cat "$PID_FILE" 2>/dev/null || true)
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            echo -e "Stopping VibeCoder (PID: $pid)..."
+            echo -e "Stopping VibeCoder supervisor (PID: $pid)..."
             kill "$pid" 2>/dev/null || true
-            sleep 1
-            if kill -0 "$pid" 2>/dev/null; then
-                kill -9 "$pid" 2>/dev/null || true
-            fi
-            rm -f "$PID_FILE"
-            echo -e "${COLOR_GREEN}✓ VibeCoder stopped.${COLOR_RESET}"
-            return 0
         fi
         rm -f "$PID_FILE"
     fi
-    echo -e "${COLOR_YELLOW}VibeCoder is not running.${COLOR_RESET}"
+    pkill -f "vibecoder.telegram_bot.bot" 2>/dev/null || true
+    pkill -f "Supervisor.*vibecoder" 2>/dev/null || true
+    echo -e "${COLOR_GREEN}✓ VibeCoder stopped.${COLOR_RESET}"
 }
 
 check_status() {
-    if [ -f "$PID_FILE" ]; then
+    if pgrep -f "vibecoder.telegram_bot.bot" >/dev/null 2>&1; then
+        local pid
+        pid=$(pgrep -f "vibecoder.telegram_bot.bot" | head -n 1)
+        echo -e "${COLOR_GREEN}● VibeCoder is RUNNING${COLOR_RESET} (PID: $pid)"
+        return 0
+    elif [ -f "$PID_FILE" ]; then
         local pid
         pid=$(cat "$PID_FILE" 2>/dev/null || true)
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            echo -e "${COLOR_GREEN}● VibeCoder is RUNNING${COLOR_RESET} (PID: $pid)"
+            echo -e "${COLOR_GREEN}● VibeCoder supervisor is RUNNING${COLOR_RESET} (PID: $pid)"
             return 0
         fi
     fi
     echo -e "${COLOR_RED}○ VibeCoder is STOPPED${COLOR_RESET}"
+    return 1
 }
 
 show_logs() {

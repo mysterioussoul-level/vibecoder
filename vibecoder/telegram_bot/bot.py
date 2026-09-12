@@ -6,11 +6,15 @@ Wires up all command handlers, inline callbacks, and execution loops.
 import sys
 import logging
 import asyncio
+import time
+from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
+    ContextTypes,
     filters
 )
 
@@ -23,8 +27,54 @@ logging.basicConfig(
 )
 logger = logging.getLogger("VibeCoderBot")
 
+async def on_startup(app: Application):
+    """Notify owner when bot starts or recovers from a crash/reboot."""
+    logger.info("VibeCoder Bot initialized and ready.")
+    if OWNER_ID:
+        try:
+            from vibecoder.config import CODESPACE_NAME, settings
+            from vibecoder.core.project_manager import project_manager
+            from vibecoder.telegram_bot.ui.formatters import escape
+            proj = project_manager.get_active_project()
+            eng = settings.get("default_engine", "antigravity")
+            text = (
+                "🚀 <b>VibeCoder Online!</b>\n"
+                "─────────────────────────────\n"
+                f"🛰 <b>Codespace:</b> <code>{escape(CODESPACE_NAME)}</code> 🟢\n"
+                f"📂 <b>Active Project:</b> <code>{escape(proj['name'])}</code>\n"
+                f"🤖 <b>AI Engine:</b> <b>{escape(eng)}</b>\n"
+                "⏱ <b>Status:</b> System recovered &amp; listening for commands!\n"
+                "─────────────────────────────\n"
+                "💡 <i>Send any message or prompt to vibe code autonomously!</i>"
+            )
+            await app.bot.send_message(
+                chat_id=OWNER_ID,
+                text=text,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.warning(f"Could not send startup notification: {e}")
+
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Handle unexpected errors without terminating the bot application."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            from vibecoder.telegram_bot.ui.formatters import escape
+            err_msg = str(context.error)
+            if len(err_msg) > 200:
+                err_msg = err_msg[:200] + "..."
+            await update.effective_message.reply_text(
+                f"⚠️ <b>Recovered from unexpected error:</b>\n<code>{escape(err_msg)}</code>\n\n"
+                "<i>Your workspace state and project files are safe. Tap /start to reload dashboard.</i>",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            pass
+
 def build_application(token: str) -> Application:
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(on_startup).build()
+    app.add_error_handler(global_error_handler)
 
     # Commands
     app.add_handler(CommandHandler(["start", "menu"], start.start_handler))
@@ -107,8 +157,21 @@ def main():
     print(f"Owner ID: {OWNER_ID or '[Any / Unrestricted]'}")
     print("=" * 60)
 
-    app = build_application(token)
-    app.run_polling(drop_pending_updates=True)
+    consecutive_failures = 0
+    while True:
+        try:
+            app = build_application(token)
+            consecutive_failures = 0
+            app.run_polling(drop_pending_updates=True)
+            break
+        except KeyboardInterrupt:
+            logger.info("Bot manually terminated by user.")
+            break
+        except Exception as e:
+            consecutive_failures += 1
+            wait_sec = min(2 ** consecutive_failures, 30)
+            logger.error(f"Telegram polling crashed with: {e}. Auto-recovering in {wait_sec}s...", exc_info=True)
+            time.sleep(wait_sec)
 
 if __name__ == "__main__":
     main()
