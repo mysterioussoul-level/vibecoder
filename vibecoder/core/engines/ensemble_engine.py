@@ -11,13 +11,17 @@ from typing import Optional
 from vibecoder.config import settings
 from vibecoder.core.engines.base import BaseEngine, EngineResult
 from vibecoder.core.engines.antigravity_engine import AntigravityEngine
+from vibecoder.core.engines.copilot_engine import CopilotEngine
+from vibecoder.core.engines.aider_engine import AiderEngine
 from vibecoder.core import git_ops, test_runner
 
 class EnsembleEngine(BaseEngine):
-    """Ensemble orchestrator with self-healing feedback loop."""
+    """Ensemble orchestrator with self-healing feedback loop across AI engines."""
 
     def __init__(self):
         self.antigravity = AntigravityEngine()
+        self.copilot = CopilotEngine()
+        self.aider = AiderEngine()
 
     @property
     def name(self) -> str:
@@ -31,6 +35,7 @@ class EnsembleEngine(BaseEngine):
         start_time = time.time()
         max_iters = kwargs.get("max_iterations") or settings.get("max_iterations", 2)
         timeout = kwargs.get("timeout") or settings.get("timeout_seconds", 300)
+        on_progress = kwargs.get("on_progress")
 
         vibe_prompt = (
             f"User Vibe Request: {prompt}\n\n"
@@ -44,22 +49,51 @@ class EnsembleEngine(BaseEngine):
         current_prompt = vibe_prompt
         iteration = 0
         last_result: Optional[EngineResult] = None
+        used_engines = []
 
         while iteration < max_iters:
             iteration += 1
-            res = await self.antigravity.run(current_prompt, project_dir, timeout=timeout)
+
+            # Step 1: Execute with Gemini 3.8 / Antigravity
+            if on_progress:
+                await on_progress("Gemini 3.8", f"Architecting solution & generating code (iteration {iteration}/{max_iters})...")
+
+            res = await self.antigravity.run(current_prompt, project_dir, timeout=timeout, **kwargs)
+            used_engines.append("Gemini 3.8")
+
+            # If Antigravity failed or made no changes, fallback to GitHub Copilot
+            if not res.success or not res.modified_files:
+                if on_progress:
+                    await on_progress("Copilot Fallback", "Antigravity did not modify files; delegating to Copilot CLI...")
+                copilot_res = await self.copilot.run(current_prompt, project_dir, timeout=timeout, **kwargs)
+                used_engines.append("Copilot")
+                if copilot_res.success and copilot_res.modified_files:
+                    res = copilot_res
+                elif not copilot_res.modified_files and settings.get("OPENROUTER_API_KEY"):
+                    if on_progress:
+                        await on_progress("Aider Fallback", "Delegating to Aider for AST-based code edits...")
+                    aider_res = await self.aider.run(current_prompt, project_dir, timeout=timeout, **kwargs)
+                    used_engines.append("Aider")
+                    if aider_res.success and aider_res.modified_files:
+                        res = aider_res
+
             last_result = res
 
-            if not res.success:
-                break
+            # Step 2: Automated Test Verification
+            if on_progress:
+                await on_progress("Testing", "Executing automated test suite (pytest/npm/syntax check)...")
 
             test_rep = test_runner.run_project_tests(project_dir)
             res.test_report = test_rep
 
             if test_rep.passed:
+                res.success = True
                 break
 
+            # Step 3: Self-Healing on Test Failure
             if iteration < max_iters:
+                if on_progress:
+                    await on_progress("Self-Healing", f"Tests failed ({test_rep.summary}); formulating patch...")
                 current_prompt = (
                     f"Test/Syntax Verification FAILED on iteration {iteration}.\n"
                     f"Runner: {test_rep.runner}\n"
@@ -67,10 +101,15 @@ class EnsembleEngine(BaseEngine):
                     f"Error Output:\n{test_rep.output[:1500]}\n\n"
                     "Please diagnose and fix the failing code in the project files immediately."
                 )
+            else:
+                # Max iterations reached and tests still failing
+                res.success = False
+                res.error = f"Automated tests failed ({test_rep.summary}):\n{test_rep.output[:800]}"
 
         duration = time.time() - start_time
         if last_result:
-            last_result.engine = f"Auto Vibe ({iteration} iter{'s' if iteration > 1 else ''})"
+            engine_summary = " + ".join(dict.fromkeys(used_engines)) or "Auto Vibe"
+            last_result.engine = f"{engine_summary} ({iteration} iter{'s' if iteration > 1 else ''})"
             last_result.duration = duration
             return last_result
 
@@ -79,5 +118,5 @@ class EnsembleEngine(BaseEngine):
             engine="Auto Vibe",
             prompt=prompt,
             duration=duration,
-            error="Ensemble execution failed to run."
+            error="Ensemble execution failed to generate code."
         )

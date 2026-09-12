@@ -7,6 +7,7 @@ import asyncio
 import os
 import time
 from typing import Optional, List
+from pathlib import Path
 
 from vibecoder.config import AGY_BIN, settings
 from vibecoder.core.engines.base import BaseEngine, EngineResult
@@ -26,15 +27,32 @@ class AntigravityEngine(BaseEngine):
 
     async def run(self, prompt: str, project_dir: str, **kwargs) -> EngineResult:
         start_time = time.time()
+        proj_path = str(Path(project_dir).resolve())
         model = kwargs.get("model") or settings.get("agy_model", "gemini-3.8-flash-high")
         effort = kwargs.get("effort") or settings.get("agy_effort", "high")
         timeout = kwargs.get("timeout") or settings.get("timeout_seconds", 300)
+        on_progress = kwargs.get("on_progress")
+
+        if on_progress:
+            await on_progress("Planning", f"Gemini 3.8 ({effort} effort) is inspecting files in {Path(project_dir).name}...")
 
         st_before = git_ops.get_status(project_dir)
 
+        enhanced_prompt = (
+            f"You are working in: {proj_path}\n"
+            f"User Goal: {prompt}\n\n"
+            "Requirements:\n"
+            "1. Inspect the existing code in this project directory.\n"
+            "2. Directly create or edit the necessary files in this directory to fulfill the request.\n"
+            "3. If unit tests exist (e.g. pytest or test files), ensure they pass or update them.\n"
+            "4. Provide a concise summary of the changes made."
+        )
+
         cmd = [
             AGY_BIN,
-            "-p", prompt,
+            "-p", enhanced_prompt,
+            "--add-dir", proj_path,
+            "--mode", "accept-edits",
             "--model", model,
             "--effort", effort,
             "--dangerously-skip-permissions"

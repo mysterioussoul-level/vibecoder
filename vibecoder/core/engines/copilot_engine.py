@@ -28,12 +28,24 @@ class CopilotEngine(BaseEngine):
         start_time = time.time()
         model = kwargs.get("model") or settings.get("copilot_model", "auto")
         timeout = kwargs.get("timeout") or settings.get("timeout_seconds", 300)
+        on_progress = kwargs.get("on_progress")
+
+        if on_progress:
+            await on_progress("Copilot", f"GitHub Copilot ({model}) is analyzing project and generating code...")
 
         st_before = git_ops.get_status(project_dir)
 
+        enhanced_prompt = (
+            f"You are operating in directory: {project_dir}\n"
+            f"Task: {prompt}\n\n"
+            "Instructions:\n"
+            "- Directly write or modify the files in this project directory.\n"
+            "- If unit tests exist, make sure they remain valid or update them."
+        )
+
         cmd = [
             COPILOT_BIN,
-            "-p", prompt,
+            "-p", enhanced_prompt,
             "--allow-all",
             "--silent"
         ]

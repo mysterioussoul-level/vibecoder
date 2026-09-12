@@ -72,7 +72,11 @@ def format_vibe_result(res: EngineResult) -> str:
         )
 
     if res.error:
-        parts.append(f"⚠️ <b>Error/Details:</b>\n<pre>{escape(res.error[:800])}</pre>\n")
+        parts.append(f"⚠️ <b>Failure Diagnosis:</b>\n<pre>{escape(res.error[:800])}</pre>\n")
+        parts.append("💡 <i>Tip: Tap /engines to switch to GitHub Copilot or Aider, or inspect with /test.</i>\n")
+    elif not res.success and not res.modified_files:
+        parts.append("⚠️ <b>Notice:</b> The AI engine completed its reasoning pass but did not make code edits.\n")
+        parts.append("💡 <i>Tip: Tap /engines to switch to GitHub Copilot or Aider, or be more explicit in your request.</i>\n")
     elif res.output:
         summary_out = res.output.strip()
         if len(summary_out) > 500:

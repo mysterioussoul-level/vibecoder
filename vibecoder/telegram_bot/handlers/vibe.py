@@ -4,9 +4,13 @@ Transforms natural language vibes into autonomous code generation, diffing, and 
 """
 
 import asyncio
+import time
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
+
+logger = logging.getLogger("VibeHandler")
 
 from vibecoder.config import settings
 from vibecoder.core.project_manager import project_manager
@@ -83,32 +87,94 @@ async def vibe_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     proj = project_manager.get_active_project()
     engine = engine_manager.get_engine()
 
-    status_card = (
-        "🧠 <b>Vibe Coding in progress...</b>\n"
-        "─────────────────────────────\n"
-        f"📂 <b>Project:</b> <code>{escape(proj['name'])}</code>\n"
-        f"🤖 <b>Engine:</b> {escape(engine.description)}\n"
-        "⏳ <b>Status:</b> Reading workspace, formulating plan & applying code changes...\n"
-        "─────────────────────────────\n"
-        f"💬 <i>'{escape(text[:150])}'</i>"
+    start_time = time.time()
+    current_stage = "Inspecting workspace files & imports..."
+    stage_percent = 15
+    spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    bar_len = 10
+
+    def make_progress_bar(pct: int) -> str:
+        filled = max(0, min(bar_len, int(round((pct / 100) * bar_len))))
+        empty = bar_len - filled
+        return f"[{'■' * filled}{'□' * empty}] {pct}%"
+
+    def format_status_card(spinner: str, elapsed: int) -> str:
+        mins, secs = divmod(elapsed, 60)
+        time_str = f"{mins:02d}:{secs:02d}"
+        bar = make_progress_bar(stage_percent)
+        return (
+            "🧠 <b>Vibe Coding in progress...</b>\n"
+            "─────────────────────────────\n"
+            f"📂 <b>Project:</b> <code>{escape(proj['name'])}</code>\n"
+            f"🤖 <b>Engine:</b> <b>{escape(engine.name.capitalize())}</b>\n"
+            f"⏱ <b>Elapsed:</b> <code>{time_str}</code> {spinner}\n\n"
+            f"🎯 <b>Current Task:</b>\n"
+            f"<i>{escape(current_stage)}</i>\n\n"
+            f"<code>{bar}</code>\n"
+            "─────────────────────────────\n"
+            f"💬 <i>'{escape(text[:120])}'</i>"
+        )
+
+    status_msg = await update.message.reply_text(
+        format_status_card("⠋", 0),
+        parse_mode=ParseMode.HTML
     )
 
-    status_msg = await update.message.reply_text(status_card, parse_mode=ParseMode.HTML)
+    stop_animation = asyncio.Event()
 
-    async def keep_typing():
-        try:
-            while True:
+    async def animate_progress():
+        idx = 0
+        while not stop_animation.is_set():
+            try:
                 await update.effective_chat.send_action(ChatAction.TYPING)
-                await asyncio.sleep(4)
-        except asyncio.CancelledError:
-            pass
+                elapsed = int(time.time() - start_time)
+                spinner = spinners[idx % len(spinners)]
+                idx += 1
+                card = format_status_card(spinner, elapsed)
+                await status_msg.edit_text(card, parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+            try:
+                await asyncio.wait_for(stop_animation.wait(), timeout=3.5)
+            except asyncio.TimeoutError:
+                pass
 
-    typing_task = asyncio.create_task(keep_typing())
+    anim_task = asyncio.create_task(animate_progress())
+
+    async def on_progress(stage: str, details: str):
+        nonlocal current_stage, stage_percent
+        current_stage = f"{stage}: {details}"
+        stage_lower = stage.lower()
+        if "gemini" in stage_lower or "plan" in stage_lower:
+            stage_percent = 35
+        elif "copilot" in stage_lower or "aider" in stage_lower or "code" in stage_lower:
+            stage_percent = 65
+        elif "test" in stage_lower:
+            stage_percent = 85
+        elif "heal" in stage_lower:
+            stage_percent = 70
+        else:
+            stage_percent = min(stage_percent + 15, 95)
 
     try:
-        result = await engine_manager.run_vibe(prompt=text, project_dir=proj["path"])
+        result = await engine_manager.run_vibe(
+            prompt=text,
+            project_dir=proj["path"],
+            on_progress=on_progress
+        )
+    except Exception as e:
+        logger.error(f"Vibe execution error: {e}", exc_info=True)
+        from vibecoder.core.engines.base import EngineResult
+        result = EngineResult(
+            success=False,
+            engine=engine.name.capitalize(),
+            prompt=text,
+            duration=time.time() - start_time,
+            error=str(e)
+        )
     finally:
-        typing_task.cancel()
+        stop_animation.set()
+        await anim_task
 
     result_text = format_vibe_result(result)
     markup = vibe_result_keyboard()
