@@ -59,4 +59,10 @@ class EngineManager:
         target_dir = project_dir or settings.active_project
         return await engine.run(prompt=prompt, project_dir=target_dir, **kwargs)
 
+    def reset_conversation(self, project_dir: Optional[str] = None):
+        """Reset conversation context across all engines."""
+        for eng in self._engines.values():
+            if hasattr(eng, "reset_conversation"):
+                eng.reset_conversation(project_dir)
+
 engine_manager = EngineManager()

@@ -31,6 +31,9 @@ class EnsembleEngine(BaseEngine):
     def description(self) -> str:
         return "Auto Vibe (Plan + Gemini 3.8 Code + Auto-Verification + Self-Healing)"
 
+    def reset_conversation(self, project_dir: Optional[str] = None):
+        self.antigravity.reset_conversation(project_dir)
+
     async def run(self, prompt: str, project_dir: str, **kwargs) -> EngineResult:
         start_time = time.time()
         max_iters = kwargs.get("max_iterations") or settings.get("max_iterations", 2)
@@ -59,7 +62,7 @@ class EnsembleEngine(BaseEngine):
             if on_progress:
                 await on_progress("Gemini 3.8", f"Architecting solution & generating code (iteration {iteration}/{max_iters})...")
 
-            res = await self.antigravity.run(current_prompt, project_dir, timeout=timeout, **kwargs)
+            res = await self.antigravity.run(current_prompt, project_dir, timeout=timeout, skip_test=True, **kwargs)
             used_engines.append("Gemini 3.8")
             if res.executed_commands:
                 for c in res.executed_commands:
@@ -70,7 +73,7 @@ class EnsembleEngine(BaseEngine):
             if not res.success or not res.modified_files:
                 if on_progress:
                     await on_progress("Copilot Fallback", "Antigravity did not modify files; delegating to Copilot CLI...")
-                copilot_res = await self.copilot.run(current_prompt, project_dir, timeout=timeout, **kwargs)
+                copilot_res = await self.copilot.run(current_prompt, project_dir, timeout=timeout, skip_test=True, **kwargs)
                 used_engines.append("Copilot")
                 if copilot_res.executed_commands:
                     for c in copilot_res.executed_commands:
@@ -82,7 +85,7 @@ class EnsembleEngine(BaseEngine):
                 elif not copilot_res.modified_files and settings.get("OPENROUTER_API_KEY"):
                     if on_progress:
                         await on_progress("Aider Fallback", "Delegating to Aider for AST-based code edits...")
-                    aider_res = await self.aider.run(current_prompt, project_dir, timeout=timeout, **kwargs)
+                    aider_res = await self.aider.run(current_prompt, project_dir, timeout=timeout, skip_test=True, **kwargs)
                     used_engines.append("Aider")
                     if aider_res.executed_commands:
                         for c in aider_res.executed_commands:
@@ -93,11 +96,11 @@ class EnsembleEngine(BaseEngine):
 
             last_result = res
 
-            # Step 2: Automated Test Verification
+            # Step 2: Automated Test Verification (executed once, non-blocking)
             if on_progress:
                 await on_progress("Testing", "Executing automated test suite (pytest/npm/syntax check)...")
 
-            test_rep = test_runner.run_project_tests(project_dir)
+            test_rep = await asyncio.to_thread(test_runner.run_project_tests, project_dir)
             res.test_report = test_rep
 
             if test_rep:

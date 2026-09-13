@@ -150,6 +150,27 @@ def test_telegram_keyboards():
     eng_kb = keyboards.engine_selection_keyboard(engine_manager.list_engines())
     assert len(eng_kb.inline_keyboard) >= 4
 
+    vibe_kb = keyboards.vibe_result_keyboard()
+    assert any(btn.callback_data == "session_reset" for row in vibe_kb.inline_keyboard for btn in row)
+
+@pytest.mark.asyncio
+async def test_conversation_caching_and_efficiency():
+    from vibecoder.core.engines.antigravity_engine import AntigravityEngine
+    eng = AntigravityEngine()
+    test_dir = "/tmp/dummy_project"
+    assert eng.get_conversation_id(test_dir) is None
+    eng._conversations[test_dir] = "dummy-conv-1234"
+    assert eng.get_conversation_id(test_dir) == "dummy-conv-1234"
+    eng.reset_conversation(test_dir)
+    assert eng.get_conversation_id(test_dir) is None
+
+    # Test engine_manager reset
+    engine_manager.reset_conversation()
+
+    # Test async non-blocking test runner
+    report = await test_runner.async_run_project_tests(str(TEST_PROJECT_PATH))
+    assert report.passed is True
+
 def test_transport_backup_script():
     transport_sh = WORKSPACE_ROOT / "transport.sh"
     assert transport_sh.exists()

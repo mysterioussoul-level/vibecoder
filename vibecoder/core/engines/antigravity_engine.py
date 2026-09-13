@@ -37,7 +37,22 @@ def format_tool_command(tool_name: str, params: Dict[str, Any]) -> str:
         return f"tool: {tool_name}"
 
 class AntigravityEngine(BaseEngine):
-    """Antigravity CLI runner powered by Gemini 3.8 Flash."""
+    """Antigravity CLI runner powered by Gemini 3.8 Flash with session continuity."""
+
+    def __init__(self):
+        self._conversations: Dict[str, str] = {}
+
+    def reset_conversation(self, project_dir: Optional[str] = None):
+        """Reset cached conversation to start from a clean slate."""
+        if project_dir:
+            proj_path = str(Path(project_dir).resolve())
+            self._conversations.pop(proj_path, None)
+        else:
+            self._conversations.clear()
+
+    def get_conversation_id(self, project_dir: str) -> Optional[str]:
+        proj_path = str(Path(project_dir).resolve())
+        return self._conversations.get(proj_path)
 
     @property
     def name(self) -> str:
@@ -63,8 +78,13 @@ class AntigravityEngine(BaseEngine):
         timeout = kwargs.get("timeout") or settings.get("timeout_seconds", 360)
         on_progress = kwargs.get("on_progress")
 
+        conv_id = kwargs.get("conversation_id")
+        if not conv_id and kwargs.get("continue_session", True):
+            conv_id = self._conversations.get(proj_path)
+
         if on_progress:
-            await on_progress("Planning", f"Gemini 3.8 ({effort} effort) is inspecting files in {Path(project_dir).name}...")
+            resume_hint = " (resuming context)" if conv_id else ""
+            await on_progress("Planning", f"Gemini 3.8 ({effort} effort){resume_hint} inspecting {Path(project_dir).name}...")
 
         st_before = git_ops.get_status(project_dir)
 
@@ -88,6 +108,9 @@ class AntigravityEngine(BaseEngine):
             "--dangerously-skip-permissions"
         ]
 
+        if conv_id:
+            cmd.extend(["--conversation", conv_id])
+
         executed_commands: List[str] = []
         final_summary: str = ""
         raw_outputs: List[str] = []
@@ -110,7 +133,11 @@ class AntigravityEngine(BaseEngine):
                     try:
                         ev = json.loads(line_str)
                         event_type = ev.get("event")
-                        if event_type == "step_update":
+                        if event_type == "init":
+                            c_id = ev.get("conversation_id")
+                            if c_id:
+                                self._conversations[proj_path] = c_id
+                        elif event_type == "step_update":
                             su = ev.get("step_update", {})
                             step_type = su.get("step_type")
                             state = su.get("state")
@@ -130,6 +157,9 @@ class AntigravityEngine(BaseEngine):
                         elif event_type == "result":
                             res_obj = ev.get("result", {})
                             final_summary = res_obj.get("response", "").strip()
+                            c_id = res_obj.get("conversation_id") or ev.get("conversation_id")
+                            if c_id:
+                                self._conversations[proj_path] = c_id
                     except Exception:
                         raw_outputs.append(line_str)
 
@@ -149,11 +179,17 @@ class AntigravityEngine(BaseEngine):
             diff_stat = git_ops.get_diff_stat(project_dir)
 
             test_rep = None
-            if settings.get("auto_test", True):
-                test_rep = test_runner.run_project_tests(project_dir)
+            if not kwargs.get("skip_test", False) and settings.get("auto_test", True):
+                test_rep = await asyncio.to_thread(test_runner.run_project_tests, project_dir)
 
             if not success and modified and test_rep and test_rep.passed:
                 success = True
+
+            # If failed due to invalid or stale conversation, clear cache for next attempt
+            if not success and conv_id:
+                err_content = (out_text + " " + stderr.decode("utf-8", errors="ignore")).lower()
+                if "conversation" in err_content or "not found" in err_content:
+                    self._conversations.pop(proj_path, None)
 
             return EngineResult(
                 success=success,
@@ -179,8 +215,8 @@ class AntigravityEngine(BaseEngine):
                 modified = st_after.get("all_changes", [])
             diff_stat = git_ops.get_diff_stat(project_dir)
             test_rep = None
-            if settings.get("auto_test", True):
-                test_rep = test_runner.run_project_tests(project_dir)
+            if not kwargs.get("skip_test", False) and settings.get("auto_test", True):
+                test_rep = await asyncio.to_thread(test_runner.run_project_tests, project_dir)
             has_working_code = bool(modified and test_rep and test_rep.passed)
             return EngineResult(
                 success=has_working_code,

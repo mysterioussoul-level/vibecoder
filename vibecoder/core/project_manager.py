@@ -250,12 +250,17 @@ class ProjectManager:
         git_st = git_ops.get_status(str(p_res))
 
         file_count = 0
+        ignore_dirs = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
         try:
-            for item in p_res.rglob("*"):
-                if item.is_file() and not any(part.startswith(".") for part in item.parts):
-                    file_count += 1
-                    if file_count > 500:
-                        break
+            for root, dirs, files in os.walk(str(p_res)):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ignore_dirs]
+                for f in files:
+                    if not f.startswith("."):
+                        file_count += 1
+                        if file_count > 500:
+                            break
+                if file_count > 500:
+                    break
         except Exception:
             pass
 
@@ -278,19 +283,29 @@ class ProjectManager:
         return self._get_project_summary(active_path, str(active_path))
 
     def set_active_project(self, name_or_path: str) -> Tuple[bool, str]:
+        def _on_switched():
+            try:
+                from vibecoder.core.engine_manager import engine_manager
+                engine_manager.reset_conversation()
+            except Exception:
+                pass
+
         p = Path(name_or_path).resolve()
         if p.exists() and p.is_dir():
             settings.set_active_project(str(p))
+            _on_switched()
             return True, f"Switched to project: {p.name}"
 
         sub = PROJECTS_DIR / name_or_path
         if sub.exists() and sub.is_dir():
             settings.set_active_project(str(sub.resolve()))
+            _on_switched()
             return True, f"Switched to project: {sub.name}"
 
         sub_root = WORKSPACE_ROOT / name_or_path
         if sub_root.exists() and sub_root.is_dir():
             settings.set_active_project(str(sub_root.resolve()))
+            _on_switched()
             return True, f"Switched to project: {sub_root.name}"
 
         return False, f"Project '{name_or_path}' not found."

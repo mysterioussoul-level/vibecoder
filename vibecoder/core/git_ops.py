@@ -70,31 +70,39 @@ def get_status(path: str) -> Dict[str, Any]:
             "summary": "Not a git repository"
         }
 
-    branch = get_current_branch(path)
-    ret, out, _ = run_git_cmd(["status", "--porcelain"], cwd=path)
-    
+    # Single git command fetching branch header and status changes together
+    ret, out, _ = run_git_cmd(["status", "-b", "--porcelain"], cwd=path)
+
+    branch = "main"
+    lines = out.splitlines() if (ret == 0 and out) else []
+    if lines and lines[0].startswith("## "):
+        b_header = lines[0][3:].strip()
+        branch = b_header.split("...")[0].strip()
+        lines = lines[1:]
+    elif ret != 0:
+        branch = get_current_branch(path)
+
     modified = []
     untracked = []
     staged = []
 
-    if ret == 0 and out:
-        for line in out.splitlines():
-            line = line.rstrip()
-            if len(line) < 3:
-                continue
-            index_code = line[0]
-            worktree_code = line[1]
-            fname = line[2:].strip()
-            if " -> " in fname:
-                fname = fname.split(" -> ")[1].strip()
-            if index_code in ("M", "A", "D", "R"):
-                staged.append(fname)
-            if worktree_code == "M":
-                modified.append(fname)
-            elif index_code == "?" and worktree_code == "?":
-                untracked.append(fname)
-            elif worktree_code == "D":
-                modified.append(f"{fname} (deleted)")
+    for line in lines:
+        line = line.rstrip()
+        if len(line) < 3:
+            continue
+        index_code = line[0]
+        worktree_code = line[1]
+        fname = line[2:].strip()
+        if " -> " in fname:
+            fname = fname.split(" -> ")[1].strip()
+        if index_code in ("M", "A", "D", "R"):
+            staged.append(fname)
+        if worktree_code == "M":
+            modified.append(fname)
+        elif index_code == "?" and worktree_code == "?":
+            untracked.append(fname)
+        elif worktree_code == "D":
+            modified.append(f"{fname} (deleted)")
 
     all_changes = list(dict.fromkeys(modified + untracked + staged))
     clean = len(all_changes) == 0

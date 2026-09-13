@@ -74,7 +74,7 @@ def run_project_tests(project_path: str, timeout: int = 90) -> TestReport:
         return TestReport(passed=passed, runner="go test", summary=summary, output=out[:2000], duration=dur)
 
     if has_pytest:
-        code, out = run_cmd(["python3", "-m", "pytest", "-q"], cwd=str(p), timeout=timeout)
+        code, out = run_cmd(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=str(p), timeout=timeout)
         dur = time.time() - start_time
         passed = (code == 0)
         lines = out.splitlines()
@@ -82,23 +82,17 @@ def run_project_tests(project_path: str, timeout: int = 90) -> TestReport:
         return TestReport(passed=passed, runner="pytest", summary=last_line, output=out[:2000], duration=dur)
 
     if has_py_files:
-        failed_files = []
-        errors = []
-        for py_file in p.rglob("*.py"):
-            if ".venv" in py_file.parts or "node_modules" in py_file.parts or "__pycache__" in py_file.parts:
-                continue
-            code, out = run_cmd(["python3", "-m", "py_compile", str(py_file)], cwd=str(p), timeout=10)
-            if code != 0:
-                failed_files.append(str(py_file.relative_to(p)))
-                errors.append(out)
-
+        # Fast compilation of entire directory tree in a single pass
+        code, out = run_cmd(["python3", "-m", "compileall", "-q", "-f", str(p)], cwd=str(p), timeout=25)
         dur = time.time() - start_time
-        if failed_files:
+        if code != 0 and out.strip():
+            error_lines = [l for l in out.splitlines() if "Error:" in l or "SyntaxError" in l or "file" in l.lower()][:5]
+            summary_err = error_lines[0] if error_lines else "Python syntax validation error."
             return TestReport(
                 passed=False,
                 runner="py_compile",
-                summary=f"Syntax error in {len(failed_files)} file(s): {', '.join(failed_files[:3])}",
-                output="\n".join(errors)[:2000],
+                summary=summary_err[:80],
+                output=out[:2000],
                 duration=dur
             )
         return TestReport(
@@ -117,3 +111,9 @@ def run_project_tests(project_path: str, timeout: int = 90) -> TestReport:
         output="Workspace has no test suite configured.",
         duration=dur
     )
+
+import asyncio
+
+async def async_run_project_tests(project_path: str, timeout: int = 90) -> TestReport:
+    """Non-blocking async runner to keep Telegram UI and event loop fluid."""
+    return await asyncio.to_thread(run_project_tests, project_path, timeout)

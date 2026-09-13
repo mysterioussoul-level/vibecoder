@@ -72,6 +72,32 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
 
+async def reset_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from vibecoder.core.engine_manager import engine_manager
+    from vibecoder.core.project_manager import project_manager
+    from vibecoder.telegram_bot.ui.formatters import escape
+    proj = project_manager.get_active_project()
+    engine_manager.reset_conversation(proj.get("path"))
+    await update.message.reply_text(
+        f"🧹 <b>Conversation context reset for <code>{escape(proj['name'])}</code>!</b>\n"
+        "Your next prompt will start a clean reasoning session.",
+        parse_mode=ParseMode.HTML
+    )
+
+async def reset_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("Conversation context reset!")
+    from vibecoder.core.engine_manager import engine_manager
+    from vibecoder.core.project_manager import project_manager
+    from vibecoder.telegram_bot.ui.formatters import escape
+    proj = project_manager.get_active_project()
+    engine_manager.reset_conversation(proj.get("path"))
+    await query.message.reply_text(
+        f"🧹 <b>Conversation context reset for <code>{escape(proj['name'])}</code>!</b>\n"
+        "Your next prompt will start a clean reasoning session.",
+        parse_mode=ParseMode.HTML
+    )
+
 def build_application(token: str) -> Application:
     app = Application.builder().token(token).post_init(on_startup).build()
     app.add_error_handler(global_error_handler)
@@ -83,6 +109,7 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler(["projects", "project", "switch"], projects.projects_menu_handler))
     app.add_handler(CommandHandler("clone", projects.clone_command))
     app.add_handler(CommandHandler("new", projects.new_command))
+    app.add_handler(CommandHandler(["reset", "clear"], reset_session_handler))
     app.add_handler(CommandHandler(["git", "status"], git_menu.git_menu_handler))
     app.add_handler(CommandHandler("diff", git_menu.view_diff_handler))
     app.add_handler(CommandHandler("commit", git_menu.commit_handler))
@@ -137,6 +164,9 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(auth.auth_copilot_token_prompt_callback, pattern="^auth_copilot_token_prompt$"))
     app.add_handler(CallbackQueryHandler(auth.auth_gemini_prompt_callback, pattern="^auth_gemini_prompt$"))
     app.add_handler(CallbackQueryHandler(auth.auth_openrouter_prompt_callback, pattern="^auth_openrouter_prompt$"))
+
+    # Session Reset Callback
+    app.add_handler(CallbackQueryHandler(reset_session_callback, pattern="^session_reset$"))
 
     # Document upload handler (e.g. antigravity-oauth-token files or project files)
     app.add_handler(MessageHandler(filters.Document.ALL, vibe.vibe_document_handler))

@@ -81,7 +81,7 @@ def vibe_result_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🧪 Run Tests", callback_data="action_run_tests"),
-            InlineKeyboardButton("⬆️ Git Push", callback_data="git_push")
+            InlineKeyboardButton("🧹 New Session", callback_data="session_reset")
         ],
         [
             InlineKeyboardButton("⏪ Revert Code", callback_data="git_revert_confirm"),

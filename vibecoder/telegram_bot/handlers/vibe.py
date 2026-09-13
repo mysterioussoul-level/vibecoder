@@ -137,6 +137,7 @@ async def vibe_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     async def animate_progress():
         idx = 0
+        last_card = ""
         while not stop_animation.is_set():
             try:
                 await update.effective_chat.send_action(ChatAction.TYPING)
@@ -144,7 +145,9 @@ async def vibe_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 spinner = spinners[idx % len(spinners)]
                 idx += 1
                 card = format_status_card(spinner, elapsed)
-                await status_msg.edit_text(card, parse_mode=ParseMode.HTML)
+                if card != last_card:
+                    await status_msg.edit_text(card, parse_mode=ParseMode.HTML)
+                    last_card = card
             except Exception:
                 pass
             try:
