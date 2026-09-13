@@ -18,7 +18,7 @@ from telegram.ext import (
     filters
 )
 
-from vibecoder.telegram_bot.handlers import start, engines, projects, git_menu, shell_cmd, backup, vibe, auth
+from vibecoder.telegram_bot.handlers import start, engines, projects, git_menu, shell_cmd, backup, vibe, auth, tunnel_menu
 from vibecoder.config import TELEGRAM_BOT_TOKEN, OWNER_ID
 
 logging.basicConfig(
@@ -122,10 +122,16 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler(["sh", "terminal"], shell_cmd.shell_command_handler))
     app.add_handler(CommandHandler(["backup", "transport", "export"], backup.backup_menu_handler))
     app.add_handler(CommandHandler(["auth", "login"], auth.auth_command))
+    app.add_handler(CommandHandler(["host", "tunnel", "tunnels", "ports"], tunnel_menu.tunnels_menu_handler))
+    app.add_handler(CommandHandler(["serve", "run"], tunnel_menu.serve_command_handler))
 
     # Callback Query Handlers
     app.add_handler(CallbackQueryHandler(start.dashboard_callback, pattern="^menu_dashboard$"))
     app.add_handler(CallbackQueryHandler(start.help_handler, pattern="^vibe_help$"))
+    app.add_handler(CallbackQueryHandler(tunnel_menu.tunnels_menu_handler, pattern="^menu_tunnels$"))
+    app.add_handler(CallbackQueryHandler(tunnel_menu.tunnel_start_callback, pattern="^tunnel_start:"))
+    app.add_handler(CallbackQueryHandler(tunnel_menu.tunnel_stop_callback, pattern="^tunnel_stop:"))
+    app.add_handler(CallbackQueryHandler(tunnel_menu.tunnel_serve_project_callback, pattern="^tunnel_serve_project$"))
     
     # Engine Callbacks
     app.add_handler(CallbackQueryHandler(engines.engines_menu_handler, pattern="^menu_engines$"))

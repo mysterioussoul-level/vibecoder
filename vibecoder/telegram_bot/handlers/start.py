@@ -64,6 +64,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /start or /menu - Main Dashboard\n"
         "• /engine - Switch AI coding engine\n"
         "• /projects - Manage & switch projects\n"
+        "• /host or /ports - Cloudflare public HTTPS hosting & tunnels\n"
+        "• /serve or /run - Launch project server & auto-tunnel\n"
+        "• /reset or /clear - Wipe conversation memory for clean reasoning\n"
         "• /clone &lt;url&gt; - Clone a GitHub repository\n"
         "• /new &lt;name&gt; - Scaffold a new project\n"
         "• /diff - View working tree git diff\n"
@@ -71,7 +74,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /push - Push commits to GitHub\n"
         "• /test - Run automated tests or syntax verification\n"
         "• /sh &lt;command&gt; - Execute shell command in project directory\n"
-        "• /backup - Export complete workspace backup & transport to new Codespace"
+        "• /backup - Export complete workspace backup & transport\n"
+        "• /auth - View & manage AI engines credentials"
     )
     if update.message:
         await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)

@@ -228,3 +228,34 @@ def test_git_remote_and_github_sync():
     assert any("Git Push" in t for t in button_texts)
     assert any("GitHub Publish" in t for t in button_texts)
 
+@pytest.mark.asyncio
+async def test_cloudflared_tunnel_manager():
+    from vibecoder.core.tunnel_manager import tunnel_manager
+    ports = tunnel_manager.get_active_ports()
+    assert isinstance(ports, list)
+    
+    # Test PID checks
+    assert tunnel_manager._is_pid_running(9999999) is False
+    assert tunnel_manager._is_pid_running(os.getpid()) is True
+
+    # Test formatter
+    dummy_tunnels = [{
+        "port": 8000,
+        "url": "https://test-vibe.trycloudflare.com",
+        "pid": 12345,
+        "service": "FastAPI App",
+        "started_at": 1000.0,
+        "uptime": 120
+    }]
+    card = formatters.format_tunnels_view(dummy_tunnels, ports, "test_proj")
+    assert "test-vibe.trycloudflare.com" in card
+    assert "Port 8000" in card
+
+    # Test keyboard
+    kb = keyboards.tunnels_menu_keyboard(dummy_tunnels, ports)
+    button_urls = [btn.url for row in kb.inline_keyboard for btn in row if btn.url]
+    assert "https://test-vibe.trycloudflare.com" in button_urls
+    button_callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row if btn.callback_data]
+    assert "tunnel_stop:8000" in button_callbacks
+    assert "tunnel_serve_project" in button_callbacks
+

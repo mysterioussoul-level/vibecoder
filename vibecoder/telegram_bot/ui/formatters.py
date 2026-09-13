@@ -4,7 +4,7 @@ Safe escaping prevents Telegram Markdown/HTML parse errors.
 """
 
 import html
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from vibecoder.core.engines.base import EngineResult
 from vibecoder.core.test_runner import TestReport
 from vibecoder.config import CODESPACE_NAME
@@ -137,4 +137,38 @@ def format_auth_status(status: Dict[str, Any]) -> str:
         "─────────────────────────────\n"
         "💡 <i>If any token expires or credits are exhausted, tap below to re-authenticate or log in directly through Telegram!</i>"
     )
+
+def format_tunnels_view(tunnels: List[Dict[str, Any]], ports: List[Dict[str, Any]], active_project: str) -> str:
+    parts = [
+        "🌐 <b>𝗖𝗟𝗢𝗨𝗗𝗙𝗟𝗔𝗥𝗘 𝗛𝗢𝗦𝗧𝗜𝗡𝗚 &amp; 𝗧𝗨𝗡𝗡𝗘𝗟𝗦</b>\n"
+        "─────────────────────────────\n"
+        f"📂 <b>Active Project:</b> <code>{escape(active_project)}</code>\n"
+    ]
+
+    if tunnels:
+        parts.append(f"🟢 <b>Active Public Tunnels ({len(tunnels)}):</b>")
+        for t in tunnels:
+            mins, secs = divmod(t.get("uptime", 0), 60)
+            parts.append(
+                f"• <b>Port {t['port']}</b> ({escape(t.get('service', 'Service'))})\n"
+                f"  🔗 <a href=\"{t['url']}\">{escape(t['url'])}</a>\n"
+                f"  ⏱ <i>Uptime: {mins}m {secs}s</i>"
+            )
+        parts.append("")
+    else:
+        parts.append("⚪ <b>Active Tunnels:</b> No public tunnels currently running.\n")
+
+    if ports:
+        un_tunneled = [p for p in ports if not p.get("is_tunneled")]
+        if un_tunneled:
+            parts.append(f"🔌 <b>Detected Localhost Servers ({len(un_tunneled)}):</b>")
+            for p in un_tunneled[:6]:
+                parts.append(f"• <b>Port {p['port']}</b>: <code>{escape(p.get('process', 'service'))}</code>")
+            parts.append("")
+
+    parts.append(
+        "─────────────────────────────\n"
+        "💡 <i>Tap any port below to instantly expose it via a free Cloudflare HTTPS tunnel, or tap 'Auto-Serve Project' to run and host your app!</i>"
+    )
+    return "\n".join(parts)
 

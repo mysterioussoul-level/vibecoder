@@ -16,7 +16,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("➕ New Project", callback_data="menu_new_project")
         ],
         [
-            InlineKeyboardButton("🔗 Clone Repo", callback_data="menu_clone_repo"),
+            InlineKeyboardButton("🌐 Host & Tunnels", callback_data="menu_tunnels"),
             InlineKeyboardButton("📊 Git & Diff", callback_data="menu_git")
         ],
         [
@@ -58,14 +58,10 @@ def template_selection_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton("🐍 Python FastAPI", callback_data="new_tmpl:python"),
-            InlineKeyboardButton("💻 Python CLI", callback_data="new_tmpl:cli")
+            InlineKeyboardButton("⚡ CLI Tool", callback_data="new_tmpl:cli")
         ],
         [
-            InlineKeyboardButton("🟢 Node Express", callback_data="new_tmpl:node"),
-            InlineKeyboardButton("🌐 Modern Web", callback_data="new_tmpl:web")
-        ],
-        [
-            InlineKeyboardButton("📄 Blank Project", callback_data="new_tmpl:blank")
+            InlineKeyboardButton("📄 Empty Project", callback_data="new_tmpl:blank")
         ],
         [
             InlineKeyboardButton("🏠 Back to Dashboard", callback_data="menu_dashboard")
@@ -81,13 +77,47 @@ def vibe_result_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🧪 Run Tests", callback_data="action_run_tests"),
-            InlineKeyboardButton("🧹 New Session", callback_data="session_reset")
+            InlineKeyboardButton("🌐 Host App", callback_data="menu_tunnels")
         ],
         [
-            InlineKeyboardButton("⏪ Revert Code", callback_data="git_revert_confirm"),
+            InlineKeyboardButton("🧹 New Session", callback_data="session_reset"),
             InlineKeyboardButton("🏠 Main Dashboard", callback_data="menu_dashboard")
         ]
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+def tunnels_menu_keyboard(tunnels: List[Dict[str, Any]], ports: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    keyboard = []
+
+    # 1. Active tunnels (links to open in browser + stop buttons)
+    if tunnels:
+        for t in tunnels:
+            p = t["port"]
+            keyboard.append([
+                InlineKeyboardButton(f"🌐 Open Port {p} ↗", url=t["url"]),
+                InlineKeyboardButton(f"⏹ Stop {p}", callback_data=f"tunnel_stop:{p}")
+            ])
+
+    # 2. Detected listening ports to quick-tunnel
+    un_tunneled = [p for p in ports if not p.get("is_tunneled")]
+    if un_tunneled:
+        port_buttons = []
+        for p in un_tunneled[:6]:
+            port_num = p["port"]
+            pname = p.get("process") or "App"
+            port_buttons.append(InlineKeyboardButton(f"⚡ Host {port_num} ({pname})", callback_data=f"tunnel_start:{port_num}"))
+        for i in range(0, len(port_buttons), 2):
+            keyboard.append(port_buttons[i:i+2])
+
+    # 3. Action rows
+    keyboard.append([
+        InlineKeyboardButton("🚀 Auto-Serve Active Project", callback_data="tunnel_serve_project"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("🔄 Refresh Status", callback_data="menu_tunnels"),
+        InlineKeyboardButton("🏠 Main Dashboard", callback_data="menu_dashboard")
+    ])
+
     return InlineKeyboardMarkup(keyboard)
 
 def git_menu_keyboard(has_changes: bool = True) -> InlineKeyboardMarkup:
